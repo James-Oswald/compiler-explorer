@@ -558,6 +558,17 @@ const definitions: Record<LanguageKey, LanguageDefinition> = {
         monacoDisassembly: null,
         digitSeparator: '_',
     },
+    lean4: {
+        name: 'Lean 4',
+        monaco: 'lean4',
+        extensions: ['.lean'],
+        alias: [],
+        logoFilename: 'lean4.svg',
+        logoFilenameDark: null,
+        formatter: null,
+        previewFilter: null,
+        monacoDisassembly: null,
+    },
     llvm: {
         name: 'LLVM IR',
         monaco: 'llvm-ir',

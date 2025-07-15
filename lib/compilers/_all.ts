@@ -97,6 +97,7 @@ export {JavaCompiler} from './java.js';
 export {JuliaCompiler} from './julia.js';
 export {KotlinCompiler} from './kotlin.js';
 export {LDCCompiler} from './ldc.js';
+export {Lean4Compiler} from './lean4.js';
 export {LFortranCompiler} from './lfortran.js';
 export {LLCCompiler} from './llc.js';
 export {LLVMMOSCompiler} from './llvm-mos.js';

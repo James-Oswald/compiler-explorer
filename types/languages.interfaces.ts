@@ -70,6 +70,7 @@ export type LanguageKey =
     | 'julia'
     | 'javascript'
     | 'kotlin'
+    | 'lean4'
     | 'llvm'
     | 'llvm_mir'
     | 'mlir'
