@@ -1,10 +1,15 @@
-import { CacheKey, CompilationCacheKey, CompilationResult, ExecutionOptionsWithEnv } from '../../types/compilation/compilation.interfaces.js';
+
+import { OptRemark } from '../../static/panes/opt-view.interfaces.js';
+import { ActiveTool, CacheKey } from '../../types/compilation/compilation.interfaces.js';
 import { PreliminaryCompilerInfo } from '../../types/compiler.interfaces.js';
 import { ParseFiltersAndOutputOptions } from '../../types/features/filters.interfaces.js';
-import {BaseCompiler} from '../base-compiler.js';
-import * as path from 'node:path';
+import { SelectedLibraryVersion } from '../../types/libraries/libraries.interfaces.js';
 import { CompilationEnvironment } from '../compilation-env.js';
-import { AsmParserCpp } from '../parsers/asm-parser-cpp.js';
+import * as StackUsage from '../stack-usage-transformer.js';
+import path from 'node:path';
+import { BaseCompiler } from '../base-compiler.js';
+import { log } from 'node:console';
+import { logger } from '../logger.js';
 
 export class Lean4Compiler extends BaseCompiler {
     static get key() {
@@ -13,72 +18,33 @@ export class Lean4Compiler extends BaseCompiler {
 
     constructor(info: PreliminaryCompilerInfo, env: CompilationEnvironment) {
         super(info, env);
-
-        //this.asm = new AsmParserCpp();
         this.outputFilebase = 'example';
     }
 
-    override getCompilerResultLanguageId(filters?: ParseFiltersAndOutputOptions): string | undefined {
-        return 'cppp';
-    }
-
-    public override getOutputFilename(dirPath: string, outputFilebase: string, key?: CacheKey | CompilationCacheKey): string {
-        let filename: string;
-
-        if (this.isCacheKey(key) && key.backendOptions.customOutputFilename) {
-            filename = key.backendOptions.customOutputFilename;
-        } else {
-            filename = `${outputFilebase}.cpp`;
+    override async doCompilation(
+        inputFilename: string,
+        dirPath: string,
+        key: CacheKey,
+        options: string[],
+        filters: ParseFiltersAndOutputOptions,
+        backendOptions: Record<string, any>,
+        libraries: SelectedLibraryVersion[],
+        tools: ActiveTool[],
+    ): Promise<[any, OptRemark[], StackUsage.StackUsageInfo[]]> {
+        // Use extraPath which holds leanc to compile Lean 4 code into a C file
+        let lean_compiler = this.getInfo().extraPath[0]
+        log(`Using Lean compiler: ${lean_compiler}`);
+        let intermediateFile = path.join(dirPath, inputFilename.replace(/\.lean$/, '.c'));
+        let result = await this.exec(lean_compiler, ["-c", intermediateFile, inputFilename], {})
+        if (result.code !== 0) {
+            return [result, [], []];
         }
-
-        if (dirPath) {
-            return path.join(dirPath, filename);
-        }
-        return filename;
+        log(`Lean 4 compilation to C succeeded: ${intermediateFile}`);
+        return super.doCompilation(intermediateFile, dirPath, key, options, filters, backendOptions, libraries, tools);
     }
+        
 
-    protected override optionsForFilter(filters: ParseFiltersAndOutputOptions, outputFilename: string, userOptions?: string[]): string[] {
-        return ["--c=" + outputFilename]
+    override optionsForFilter(filters: ParseFiltersAndOutputOptions, outputFilename: string, userOptions?: string[]): string[] {
+        return ["-g -c -o " + outputFilename]
     }
-
-    protected
-
-    // override async runCompiler(
-    //     compiler: string,
-    //     options: string[],
-    //     inputFilename: string,
-    //     execOptions: ExecutionOptionsWithEnv,
-    //     filters?: ParseFiltersAndOutputOptions,
-    // ): Promise<CompilationResult> {
-    //     // Step 1: Run the Lean4 compiler to generate C++ code
-    //     const leanOutputFilename = this.getOutputFilename(execOptions.customCwd || '', 'lean_output.cpp');
-    //     const leanOptions = [...options, '-c', leanOutputFilename];
-    //     const leanResult = await this.exec(compiler, leanOptions, execOptions);
-
-    //     if (leanResult.code !== 0) {
-    //         return {
-    //             ...this.transformToCompilationResult(leanResult, inputFilename),
-    //             asm: [{ text: 'Lean4 compilation failed' }],
-    //         };
-    //     }
-
-    //     // Step 2: Run the secondary compiler (e.g., GCC or Clang) on the generated C++ code
-    //     const cppCompiler = 'clang'; // Replace with the desired C++ compiler
-    //     const cppOutputFilename = this.getOutputFilename(execOptions.customCwd || '', 'output');
-    //     const cppOptions = ['-std=c++17', leanOutputFilename, '-o', cppOutputFilename];
-    //     const cppResult = await this.exec(cppCompiler, cppOptions, execOptions);
-
-    //     if (cppResult.code !== 0) {
-    //         return {
-    //             ...this.transformToCompilationResult(cppResult, inputFilename),
-    //             asm: [{ text: 'C++ compilation failed' }],
-    //         };
-    //     }
-
-    //     // Combine results and return
-    //     return {
-    //         ...this.transformToCompilationResult(cppResult, inputFilename),
-    //         asm: [{ text: 'Compilation succeeded' }],
-    //     };
-    // }
 }
