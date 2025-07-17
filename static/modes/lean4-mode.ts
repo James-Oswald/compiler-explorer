@@ -1,51 +1,199 @@
 import * as monaco from 'monaco-editor';
 
-// Copyright (c) 2023, Compiler Explorer Authors
-// All rights reserved.
-//
-// Redistribution and use in source and binary forms, with or without
-// modification, are permitted provided that the following conditions are met:
-//
-//     * Redistributions of source code must retain the above copyright notice,
-//       this list of conditions and the following disclaimer.
-//     * Redistributions in binary form must reproduce the above copyright
-//       notice, this list of conditions and the following disclaimer in the
-//       documentation and/or other materials provided with the distribution.
-//
-// THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS"
-// AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE
-// IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE
-// ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT HOLDER OR CONTRIBUTORS BE
-// LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, OR
-// CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED TO, PROCUREMENT OF
-// SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, DATA, OR PROFITS; OR BUSINESS
-// INTERRUPTION) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN
-// CONTRACT, STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE)
+const keywords = [
+    'attribute',
+    'global',
+    'local',
+    'scoped',
+    'partial',
+    'unsafe',
+    'private',
+    'protected',
+    'noncomputable',
+    'sorry',
+    'admit',
+    'stop',
+    'print',
+    'eval',
+    'reduce',
+    'check',
+    'deriving',
+    'instance',
+    'inductive',
+    'coinductive',
+    'structure',
+    'theorem',
+    'axiom',
+    'abbrev',
+    'lemma',
+    'def',
+    'class',
+    'constant',
+    'show',
+    'have',
+    'from',
+    'suffices',
+    'nomatch',
+    'match',
+    'with',
+    'for',
+    'in',
+    'unless',
+    'try',
+    'catch',
+    'finally',
+    'return',
+    'continue',
+    'break',
+    'true',
+    'false',
+];
 
+const typeKeywords = [
+    'Prop',
+    'Type',
+    'Sort',
+    'Type*',
+    'Int',
+    'Nat',
+    'String',
+    'Char',
+    'Bool',
+    'Unit',
+    'List',
+    'Array',
+    'Option',
+    'Sum',
+    'Prod',
+    'IO',
+    'Except',
+    'Monad',
+    'Int32',
+    'Int64',
+    'UInt32',
+    'UInt64',
+    'Float32',
+    'Float64',
+];
 
-export default function definition(): monaco.languages.IMonarchLanguage {
+const operators = ['=>', '->', '<-', ':=', ':', '=', '∀', '→', 'λ', '∃', '\\', '|', ';'];
+
+const symbols = /[=><!~?:&|\+\-\*\/\^%λ→∀∃]+/;
+
+const escapes = /\\(?:[ntr"\\'xu][0-9A-Fa-f]*)/;
+
+function definition(): monaco.languages.IMonarchLanguage {
     return {
-        // Define the language's keywords
-        keywords: [
-            'def', 'theorem', 'lemma', 'example', 'import', 'namespace', 'inductive', 'structure', 'class', 'instance'
-        ],
+        defaultToken: '',
+        tokenPostfix: '.lean4',
 
-        // Define the tokenizer
+        keywords: keywords,
+        typeKeywords: typeKeywords,
+        operators: operators,
+
+        // characters and symbols
+        symbols: symbols,
+        escapes: escapes,
+
+        // The main tokenizer for our languages
         tokenizer: {
             root: [
-                [/\b(def|theorem|lemma|example|import|namespace|inductive|structure|class|instance)\b/, 'keyword'],
-                [/[a-zA-Z_][\w]*/, {
-                    cases: {
-                        '@keywords': 'keyword',
-                        '@default': 'identifier'
-                    }
-                }],
-                [/\d+/, 'number'],
-                [/[{}()\[\]]/, '@brackets'],
-                [/[;,.]/, 'delimiter'],
-                [/"([^"\\]|\\.)*"/, 'string'],
-                [/'([^'\\]|\\.)*'/, 'string']
-            ]
-        }
+                // identifiers and keywords
+                [
+                    /[a-zA-Z_][\w_]*/,
+                    {
+                        cases: {
+                            '@typeKeywords': 'keyword',
+                            '@keywords': 'keyword',
+                            '@default': 'identifier',
+                        },
+                    },
+                ],
+
+                // whitespace and comments
+                {include: '@whitespace'},
+
+                // delimiters and operators
+                [/[{}()[\]]/, '@brackets'],
+                //[/[<>](?!@symbols)/, '@brackets'],
+                [/@symbols/, 'operator'],
+
+                // numbers
+                [/\b0x[0-9A-Fa-f_]*[0-9A-Fa-f]\b/, 'number.hex'],
+                [/\b\d+(\.\d+)?([eE][+\-]?\d+)?\b/, 'number'],
+
+                // strings
+                [/"$/, 'string', '@popall'],
+                [/"(.*)$/, 'string.invalid'],
+                [/"/, 'string', '@string'],
+
+                // characters
+                [/'[^\\']'/, 'string'],
+                [/'/, 'string', '@char'],
+            ],
+
+            // Deal with whitespace, line comments and nested block comments
+            whitespace: [
+                [/[ \t\r\n]+/, 'white'],
+                [/--.*$/, 'comment'], // line comment
+                [/\/-!/, 'comment.doc', '@comment'], // module doc comment
+                [/\/--/, 'comment.doc', '@comment'], // doc comment
+                [/\/-/, 'comment', '@comment'], // nested block comment start
+            ],
+
+            comment: [
+                [/[^\-\/]+/, 'comment'],
+                [/-\//, 'comment', '@pop'], // end of block comment
+                [/\/-/, 'comment', '@push'], // nested block comment
+                [/[-\/]/, 'comment'],
+            ],
+
+            // Recognize string literals, including escapes
+            string: [
+                [/[^\\"]+/, 'string'],
+                [/@escapes/, 'string.escape'],
+                [/\\./, 'string.escape.invalid'],
+                [/"/, 'string', '@pop'],
+            ],
+
+            char: [
+                [/[^\\']+/, 'string'],
+                [/@escapes/, 'string.escape'],
+                [/\\./, 'string.escape.invalid'],
+                [/'/, 'string', '@pop'],
+            ],
+        },
     };
 }
+
+function configuration(): monaco.languages.LanguageConfiguration {
+    return {
+        comments: {
+            lineComment: '--',
+            blockComment: ['/-', '-/'],
+        },
+        brackets: [
+            ['{', '}'],
+            ['[', ']'],
+            ['(', ')'],
+        ],
+        autoClosingPairs: [
+            {open: '[', close: ']'},
+            {open: '{', close: '}'},
+            {open: '(', close: ')'},
+            {open: '"', close: '"', notIn: ['string']},
+            {open: "'", close: "'", notIn: ['string', 'comment']},
+        ],
+        surroundingPairs: [
+            {open: '{', close: '}'},
+            {open: '[', close: ']'},
+            {open: '(', close: ')'},
+            {open: '"', close: '"'},
+            {open: "'", close: "'"},
+        ],
+    };
+}
+
+monaco.languages.register({id: 'lean4'});
+monaco.languages.setMonarchTokensProvider('lean4', definition());
+monaco.languages.setLanguageConfiguration('lean4', configuration());

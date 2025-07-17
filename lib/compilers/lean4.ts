@@ -1,24 +1,20 @@
-import {log} from 'node:console';
-import path from 'node:path';
+import * as fs from 'node:fs';
 import {OptRemark} from '../../static/panes/opt-view.interfaces.js';
 import {ActiveTool, CacheKey} from '../../types/compilation/compilation.interfaces.js';
-import {PreliminaryCompilerInfo} from '../../types/compiler.interfaces.js';
 import {ParseFiltersAndOutputOptions} from '../../types/features/filters.interfaces.js';
 import {SelectedLibraryVersion} from '../../types/libraries/libraries.interfaces.js';
-import {BaseCompiler} from '../base-compiler.js';
-import {CompilationEnvironment} from '../compilation-env.js';
+import {logger} from '../logger.js';
 import * as StackUsage from '../stack-usage-transformer.js';
+import {ClangCompiler} from './clang.js';
 
-export class Lean4Compiler extends BaseCompiler {
-    static get key() {
+// leanc is a thin wrapper around clang
+export class Lean4Compiler extends ClangCompiler {
+    static override get key() {
         return 'lean4';
     }
 
-    constructor(info: PreliminaryCompilerInfo, env: CompilationEnvironment) {
-        super(info, env);
-        this.outputFilebase = 'example';
-    }
-
+    //We wrap super.doCompilation (which calls leanc, a clang wrapper) with a call to the lean compiler
+    //which compiles Lean 4 code into C code.
     override async doCompilation(
         inputFilename: string,
         dirPath: string,
@@ -31,21 +27,34 @@ export class Lean4Compiler extends BaseCompiler {
     ): Promise<[any, OptRemark[], StackUsage.StackUsageInfo[]]> {
         // Use extraPath which holds leanc to compile Lean 4 code into a C file
         const lean_compiler = this.getInfo().extraPath[0];
-        log(`Using Lean compiler: ${lean_compiler}`);
-        const intermediateFile = path.join(dirPath, inputFilename.replace(/\.lean$/, '.c'));
+        logger.debug(`Using Lean compiler: ${lean_compiler}`);
+        const intermediateFile = inputFilename.replace(/\.lean$/, '.c');
         const result = await this.exec(lean_compiler, ['-c', intermediateFile, inputFilename], {});
-        if (result.code !== 0) {
-            return [result, [], []];
+        if (result.code !== 0 || !fs.existsSync(intermediateFile)) {
+            logger.error(`Lean 4 compilation to C failed: ${result.stdout}`);
+
+            return [null, [], []];
         }
-        log(`Lean 4 compilation to C succeeded: ${intermediateFile}`);
-        return super.doCompilation(intermediateFile, dirPath, key, options, filters, backendOptions, libraries, tools);
+        logger.debug(`Lean 4 compilation to C succeeded: ${intermediateFile}`);
+        const new_result: Promise<[any, OptRemark[], StackUsage.StackUsageInfo[]]> = super.doCompilation(
+            intermediateFile,
+            dirPath,
+            key,
+            options,
+            filters,
+            backendOptions,
+            libraries,
+            tools,
+        );
+        return new_result;
     }
 
-    override optionsForFilter(
-        filters: ParseFiltersAndOutputOptions,
-        outputFilename: string,
-        userOptions?: string[],
-    ): string[] {
-        return ['-g -c -o ' + outputFilename];
-    }
+    // override optionsForFilter(
+    //     filters: ParseFiltersAndOutputOptions,
+    //     outputFilename: string,
+    //     userOptions?: string[],
+    // ): string[] {
+    //     logger.info(`Filtering options for output file: ${outputFilename}`);
+    //     return super.optionsForFilter(filters, outputFilename, userOptions).concat(['-c ']);
+    // }
 }
